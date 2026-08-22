@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17202a">
+<title>Lens Stock & Expiry Tracker</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17202a;background:#f5f7fa}
+*{box-sizing:border-box}body{margin:0}.app{max-width:1050px;margin:auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}h1{font-size:25px;margin:0}header p{margin:4px 0 0;color:#667085}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card,.panel{background:#fff;border:1px solid #dfe3e8;border-radius:16px;padding:15px}.stat b{display:block;font-size:23px}.stat span{font-size:12px;color:#667085}
+.panel{margin-top:14px}.panel h2{font-size:18px;margin:0 0 14px}.form{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.wide{grid-column:1/-1}
+label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}input,select,button{font:inherit}input,select{width:100%;min-height:46px;padding:10px 12px;border:1px solid #cbd2dc;border-radius:10px;background:#fff;font-size:16px}
+.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:13px}.btn{min-height:46px;padding:10px 15px;border:0;border-radius:10px;font-weight:700;cursor:pointer}.primary{background:#17202a;color:#fff}.secondary{background:#edf1f5;color:#17202a}.danger{background:#fde8e8;color:#9b1c1c}
+.toolbar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px}.tablewrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:850px}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #e8ebef}th{font-size:12px;color:#667085;text-transform:uppercase}
+.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:700}.good{background:#e8f5e9}.soon{background:#fff3cd}.expired{background:#fde8e8}
+.empty{text-align:center;color:#667085;padding:28px}.scanner{display:none;margin-top:12px;border:1px solid #dfe3e8;border-radius:14px;overflow:hidden;background:#111}.scanner.active{display:block}.scanner video{width:100%;display:block;max-height:50vh;object-fit:cover}.scanbar{padding:10px;background:#20252b;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.notice{margin-top:10px;padding:10px 12px;background:#f3f5f8;border-radius:10px;color:#475467;font-size:13px}.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#17202a;color:#fff;padding:10px 14px;border-radius:10px;display:none;z-index:10}
+@media(max-width:750px){.grid4{grid-template-columns:repeat(2,1fr)}.form,.toolbar{grid-template-columns:1fr}.wide{grid-column:auto}.app{padding:12px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><h1>Lens Stock & Expiry Tracker</h1><p>Price category → power → batch → expiry → quantity</p></div></header>
+
+<section class="grid4">
+<div class="card stat"><b id="total">0</b><span>Total units</span></div>
+<div class="card stat"><b id="records">0</b><span>Stock records</span></div>
+<div class="card stat"><b id="soon">0</b><span>Expiring ≤ 90 days</span></div>
+<div class="card stat"><b id="expired">0</b><span>Expired</span></div>
+</section>
+
+<section class="panel">
+<h2>Add / update stock</h2>
+<div class="form">
+<div class="wide"><label>Barcode</label><input id="barcode" inputmode="numeric" autocomplete="off" placeholder="Scan barcode"></div>
+<div><label>Price category</label><input id="price" autocomplete="off" placeholder="e.g. ₹500"></div>
+<div><label>Lens power</label><input id="power" autocomplete="off" placeholder="e.g. +18.5 D"></div>
+<div><label>Batch / Lot</label><input id="batch" autocomplete="off" placeholder="Batch number"></div>
+<div><label>Expiry date</label><input id="expiry" type="date"></div>
+<div><label>Quantity</label><input id="qty" type="number" min="1" step="1" value="1"></div>
+</div>
+<div class="actions">
+<button class="btn primary" id="scan">📷 Scan barcode</button>
+<button class="btn primary" id="save">Save stock</button>
+<button class="btn secondary" id="clear">Clear</button>
+</div>
+<div id="scanner" class="scanner"><video id="video" playsinline></video><div class="scanbar"><span id="scanStatus">Starting camera…</span><button class="btn secondary" id="stop">Stop</button></div></div>
+<div class="notice">Price and power are free text fields. The scanner uses your phone camera with a native browser scanner and a ZXing fallback.</div>
+</section>
+
+<section class="panel">
+<h2>Inventory</h2>
+<div class="toolbar">
+<input id="search" placeholder="Search barcode or batch">
+<input id="fprice" placeholder="Filter by price">
+<input id="fpower" placeholder="Filter by power">
+<select id="filter"><option value="all">All expiry</option><option value="expired">Expired</option><option value="soon">≤90 days</option><option value="good">More than 90 days</option></select>
+</div>
+<div class="tablewrap"><table><thead><tr><th>Price</th><th>Power</th><th>Barcode</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+
+<section class="panel">
+<h2>Issue stock</h2>
+<p class="small">Select the exact price, power, batch and expiry. You do not need to scan the barcode again.</p>
+<div class="form">
+<div><label>Price</label><input id="issuePrice" placeholder="e.g. ₹750"></div>
+<div><label>Power</label><input id="issuePower" placeholder="e.g. +18.5 D"></div>
+<div class="wide"><label>Stock record</label><select id="issueRecord"><option value="">Select stock record</option></select></div>
+<div><label>Quantity to issue</label><input id="issueQty" type="number" min="1" step="1" value="1"></div>
+</div>
+<div class="actions"><button class="btn primary" id="issue">Issue stock</button><button class="btn secondary" id="refreshIssue">Refresh stock list</button></div>
+<div id="issueInfo" class="notice">Choose a price and power to see matching batches.</div>
+</section>
+
+<section class="panel">
+<h2>Issue history</h2>
+<div class="tablewrap"><table><thead><tr><th>Date & time</th><th>Price</th><th>Power</th><th>Batch</th><th>Expiry</th><th>Qty issued</th></tr></thead><tbody id="issueRows"></tbody></table></div>
+</section>
+
+<section class="panel">
+<h2>Google Sheets connection</h2>
+<p class="small">After we create a Google Apps Script web endpoint, paste its Web App URL here. The tracker will then be able to send your inventory to Google Sheets.</p>
+<div class="form">
+<div class="wide"><label>Google Apps Script Web App URL</label><input id="sheetUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec"></div>
+</div>
+<div class="actions"><button class="btn secondary" id="saveSheet">Save connection</button><button class="btn primary" id="sync">Sync to Google Sheets</button></div>
+</section>
+
+<section class="panel">
+<h2>Data</h2>
+<div class="actions">
+<button class="btn secondary" id="export">Export CSV</button>
+<button class="btn secondary" id="backup">Backup JSON</button>
+<label class="btn secondary" style="display:inline-flex;align-items:center;cursor:pointer">Restore JSON<input id="restore" type="file" accept=".json,application/json" hidden></label>
+<button class="btn danger" id="wipe">Delete all data</button>
+</div>
+</section>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const DB="lens-stock-expiry-v6", STORE="records", ISSUES="issues", CFG="config";
+let db,records=[],config={sheetUrl:""},reader=null,readerControls=null,scannerModule=null;
+const $=id=>document.getElementById(id);
+function toast(s){let t=$("toast");t.textContent=s;t.style.display="block";clearTimeout(window.tt);window.tt=setTimeout(()=>t.style.display="none",2200)}
+function today(){let d=new Date();d.setHours(0,0,0,0);return d}
+function stat(exp){let d=new Date(exp+"T00:00:00"),n=Math.ceil((d-today())/86400000);if(n<0)return["Expired","expired"];if(n<=90)return["≤90 days","soon"];return["Good","good"]}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function openDB(){return new Promise((res,rej)=>{let r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{r.result.createObjectStore(STORE,{keyPath:"id",autoIncrement:true});r.result.createObjectStore(ISSUES,{keyPath:"id",autoIncrement:true});r.result.createObjectStore(CFG,{keyPath:"key"})};r.onsuccess=()=>{db=r.result;res()};r.onerror=()=>rej(r.error)})}
+function tx(store,mode="readonly"){return db.transaction(store,mode).objectStore(store)}
+function getAll(store){return new Promise((res,rej)=>{let r=tx(store).getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function add(store,x){return new Promise((res,rej)=>{let r=tx(store,"readwrite").add(x);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function put(store,x){return new Promise((res,rej)=>{let r=tx(store,"readwrite").put(x);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function del(store,id){return new Promise((res,rej)=>{let r=tx(store,"readwrite").delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function clear(store){return new Promise((res,rej)=>{let r=tx(store,"readwrite").clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+
+async 
+function fillIssueRecords(){
+ const price=$("issuePrice").value.trim().toLowerCase(),power=$("issuePower").value.trim().toLowerCase();
+ const matches=records.filter(x=>(!price||x.price.toLowerCase().includes(price))&&(!power||x.power.toLowerCase().includes(power))&&Number(x.qty)>0);
+ $("issueRecord").innerHTML='<option value="">Select stock record</option>'+matches.map(x=>`<option value="${x.id}">${esc(x.price)} | ${esc(x.power)} | Batch ${esc(x.batch)} | Expiry ${x.expiry} | Qty ${x.qty}</option>`).join("");
+ $("issueInfo").textContent=matches.length?"Select the exact batch/expiry to issue from.":"No matching stock available.";
+}
+async function renderIssues(){
+ const issues=await getAll(ISSUES);
+ const rows=issues.sort((a,b)=>new Date(b.issuedAt)-new Date(a.issuedAt));
+ $("issueRows").innerHTML=rows.length?rows.map(x=>`<tr><td>${esc(new Date(x.issuedAt).toLocaleString())}</td><td>${esc(x.price)}</td><td>${esc(x.power)}</td><td>${esc(x.batch)}</td><td>${esc(x.expiry)}</td><td>${x.qty}</td></tr>`).join(""):'<tr><td colspan="6" class="empty">No issues recorded yet</td></tr>';
+}
+async function issueStock(){
+ const id=Number($("issueRecord").value),qty=Math.max(1,Math.floor(Number($("issueQty").value)||1));
+ const record=records.find(x=>x.id===id);
+ if(!record){toast("Select a stock record first.");return}
+ if(qty>Number(record.qty)){toast("Issue quantity exceeds available stock.");return}
+ record.qty-=qty;
+ await put(STORE,record);
+ const issue={issuedAt:new Date().toISOString(),price:record.price,power:record.power,barcode:record.barcode,batch:record.batch,expiry:record.expiry,qty};
+ await add(ISSUES,issue);
+ $("issueQty").value=1;
+ render();
+ fillIssueRecords();
+ await renderIssues();
+ toast(`Issued ${qty} unit${qty===1?"":"s"}. Stock reduced.`);
+}
+function render(){let q=$("search").value.toLowerCase().trim(),fp=$("fprice").value.toLowerCase().trim(),fw=$("fpower").value.toLowerCase().trim(),fe=$("filter").value;
+let shown=records.filter(x=>{let s=stat(x.expiry)[1];return(!q||[x.barcode,x.price,x.power,x.batch].join(" ").toLowerCase().includes(q))&&(!fp||x.price.toLowerCase().includes(fp))&&(!fw||x.power.toLowerCase().includes(fw))&&(fe==="all"||s===fe)});
+$("rows").innerHTML=shown.length?shown.map(x=>{let s=stat(x.expiry);return `<tr><td><b>${esc(x.price)}</b></td><td>${esc(x.power)}</td><td>${esc(x.barcode)}</td><td>${esc(x.batch)}</td><td>${x.expiry}</td><td>${x.qty}</td><td><span class="pill ${s[1]}">${s[0]}</span></td><td><button class="btn secondary" data-del="${x.id}">Delete</button></td></tr>`}).join(""):`<tr><td colspan="8" class="empty">No matching stock</td></tr>`;
+$("total").textContent=records.reduce((a,x)=>a+Number(x.qty||0),0);$("records").textContent=records.length;$("soon").textContent=records.filter(x=>stat(x.expiry)[1]==="soon").length;$("expired").textContent=records.filter(x=>stat(x.expiry)[1]==="expired").length}
+function clearForm(){$("barcode").value="";$("price").value="";$("power").value="";$("batch").value="";$("expiry").value="";$("qty").value=1}
+async function save(){let barcode=$("barcode").value.trim(),price=$("price").value,power=$("power").value,batch=$("batch").value.trim(),expiry=$("expiry").value,qty=Math.max(1,Math.floor(Number($("qty").value)||1));if(!barcode||!price||!power||!batch||!expiry){toast("Complete all stock fields.");return}
+let e=records.find(x=>x.barcode===barcode&&x.price===price&&x.power===power&&x.batch===batch&&x.expiry===expiry);if(e){e.qty+=qty;await put(STORE,e);toast("Quantity added.");}else{let x={barcode,price,power,batch,expiry,qty};x.id=await add(STORE,x);records.push(x);toast("Stock saved.")}clearForm();render()}
+async function loadZXing(){
+ if(scannerModule) return scannerModule;
+ try{
+   scannerModule=await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm");
+   return scannerModule;
+ }catch(e){console.error("ZXing import failed",e);return null;}
+}
+async function startNativeScan(){
+ if(!("BarcodeDetector" in window)) return false;
+ try{
+   const formats=await BarcodeDetector.getSupportedFormats();
+   if(!formats.length) return false;
+   const detector=new BarcodeDetector({formats});
+   const video=$("video");
+   const stream=await navigator.mediaDevices.getUserMedia({
+     video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},
+     audio:false
+   });
+   video.srcObject=stream;
+   await video.play();
+   scannerControls={stop:()=>stream.getTracks().forEach(t=>t.stop())};
+   $("scanStatus").textContent="Camera ready. Point at the barcode.";
+   const scan=async()=>{
+     if(!scannerControls)return;
+     try{
+       const results=await detector.detect(video);
+       if(results.length){
+         $("barcode").value=results[0].rawValue;
+         stopScan();toast("Barcode scanned.");$("price").focus();return;
+       }
+     }catch(e){}
+     requestAnimationFrame(scan);
+   };
+   requestAnimationFrame(scan);
+   return true;
+ }catch(e){console.error("Native scanner failed",e);return false;}
+}
+async function startScan(){
+ $("scanner").classList.add("active");
+ $("scanStatus").textContent="Starting camera…";
+ if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+   stopScan();toast("This browser cannot access the camera.");return;
+ }
+ if(await startNativeScan())return;
+ const ZX=await loadZXing();
+ if(!ZX){
+   stopScan();toast("Scanner could not load. Check internet and refresh.");return;
+ }
+ try{
+   reader=new ZX.BrowserMultiFormatReader();
+   const devices=await ZX.BrowserCodeReader.listVideoInputDevices();
+   if(!devices.length)throw new Error("No camera found");
+   const preferred=devices.find(d=>/back|rear|environment/i.test(d.label))||devices[devices.length-1];
+   $("scanStatus").textContent="Starting barcode reader…";
+   readerControls=await reader.decodeFromVideoDevice(preferred.deviceId,$("video"),result=>{
+     if(result){
+       $("barcode").value=result.getText();
+       stopScan();toast("Barcode scanned.");$("price").focus();
+     }
+   });
+   $("scanStatus").textContent="Camera ready. Point at the barcode.";
+ }catch(e){
+   console.error("ZXing scanner failed",e);
+   stopScan();toast("Camera could not start. Check HTTPS and camera permission.");
+ }
+}
+function stopScan(){
+ try{if(readerControls)readerControls.stop()}catch(e){}
+ try{if(reader)reader.reset()}catch(e){}
+ readerControls=null;reader=null;
+ const v=$("video");
+ if(v.srcObject){try{v.srcObject.getTracks().forEach(t=>t.stop())}catch(e){}}
+ v.srcObject=null;
+ $("scanner").classList.remove("active");
+};
+$("sync").onclick=async()=>{
+ const url=$("sheetUrl").value.trim();
+ if(!url){toast("Enter the Google Apps Script Web App URL first.");return}
+ try{
+   const issues=await getAll(ISSUES); const payload={action:"replace",records:records.map(({id,...x})=>x),issues:issues.map(({id,...x})=>x)};
+   const response=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
+   if(!response.ok)throw new Error(await response.text());
+   toast("Google Sheets sync sent successfully.");
+ }catch(e){
+   console.error(e);
+   toast("Sync failed. Check the Web App URL and deployment.");
+ }
+};
+$("export").onclick=()=>download("lens-inventory.csv",csv(),"text/csv");$("backup").onclick=async()=>download("lens-inventory-backup.json",JSON.stringify({config,records,issues:await getAll(ISSUES)},null,2),"application/json");
+$("wipe").onclick=async()=>{if(confirm("Delete all inventory records?")){await clear(STORE);await clear(ISSUES);records=[];render();fillIssueRecords();await renderIssues();toast("Inventory and issue history cleared.")}};
+$("restore").onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let x=JSON.parse(await f.text());if(!Array.isArray(x.records)||!x.config)throw 0;await clear(STORE);config=x.config;records=[];for(let r of x.records){let y={barcode:String(r.barcode||""),price:String(r.price||""),power:String(r.power||""),batch:String(r.batch||""),expiry:String(r.expiry||""),qty:Math.max(1,Number(r.qty)||1)};y.id=await add(STORE,y);records.push(y)}$("sheetUrl").value=config.sheetUrl||"";render();toast("Backup restored.")}catch(err){toast("Invalid backup.")}e.target.value=""};
+
+(async()=>{
+ try{
+   await openDB();
+   let c=await getAll(CFG);
+   if(c.length)config=c[0].value||config;
+   records=await getAll(STORE);
+   if(document.getElementById("sheetUrl"))$("sheetUrl").value=config.sheetUrl||"";
+   render();fillIssueRecords();renderIssues();
+ }catch(e){
+   console.error("Tracker initialization failed",e);
+   toast("Tracker could not initialize. Refresh the page.");
+ }
+})();
+</script>
+</body>
+</html>
